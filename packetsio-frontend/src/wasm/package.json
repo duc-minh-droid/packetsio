@@ -1,0 +1,15 @@
+{
+  "name": "packetsio",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "packetsio_bg.wasm",
+    "packetsio.js",
+    "packetsio.d.ts"
+  ],
+  "main": "packetsio.js",
+  "types": "packetsio.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
