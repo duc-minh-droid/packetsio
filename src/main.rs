@@ -1,13 +1,15 @@
 use packetsio::Simulation;
 
 fn main() {
-    let mut sim = Simulation::new_default();
+    let mut sim = Simulation::new();
+    sim.load_default_topology();
 
     for _ in 0..7 {
         if sim.is_finished() {
             break;
         }
         sim.step();
+        println!("{}", sim.snapshot());
     }
 
     println!("\n=== METRICS ===");
