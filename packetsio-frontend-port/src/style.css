@@ -1,0 +1,207 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--card-bg);
+  --color-card-border: var(--card-border);
+  --color-border: var(--border-color);
+  --color-border-bright: var(--border-bright);
+  --color-muted: var(--muted-bg);
+  --color-muted-foreground: var(--muted-fg);
+  --color-primary: var(--primary-color);
+  --color-primary-foreground: var(--primary-fg);
+  --color-secondary: var(--secondary-color);
+  --color-secondary-foreground: var(--secondary-fg);
+  --color-input: var(--input-bg);
+  --color-accent: var(--accent-color);
+  --color-accent-foreground: var(--accent-fg);
+  --color-destructive: var(--dest-color);
+  --color-destructive-foreground: var(--dest-fg);
+
+  --color-chart-1: var(--primary-color);
+  --color-chart-2: var(--primary-color);
+  --color-chart-3: var(--secondary-color);
+  --color-chart-4: var(--chart-cyan);
+
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, "SFMono-Regular", "Menlo", monospace;
+  --font-vt: "VT323", "JetBrains Mono", monospace;
+}
+
+/* Default Dark Theme Variables */
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --fg: #33ff00;
+  --card-bg: #080c08;
+  --card-border: #1f521f;
+  --border-color: #1f521f;
+  --border-bright: #33ff00;
+  --muted-bg: #112011;
+  --muted-fg: #4e9b4e;
+  --primary-color: #33ff00;
+  --primary-fg: #0a0a0a;
+  --secondary-color: #ffb000;
+  --secondary-fg: #0a0a0a;
+  --input-bg: #101c10;
+  --accent-color: #33ff00;
+  --accent-fg: #0a0a0a;
+  --dest-color: #ff3333;
+  --dest-fg: #0a0a0a;
+  --chart-cyan: #00e5ff;
+}
+
+/* Light Theme Variables */
+html.light,
+.light {
+  color-scheme: light;
+  --bg: #f3f4f6;
+  --fg: #0f172a;
+  --card-bg: #ffffff;
+  --card-border: #cbd5e1;
+  --border-color: #cbd5e1;
+  --border-bright: #15803d;
+  --muted-bg: #e2e8f0;
+  --muted-fg: #64748b;
+  --primary-color: #16a34a;
+  --primary-fg: #ffffff;
+  --secondary-color: #d97706;
+  --secondary-fg: #ffffff;
+  --input-bg: #f8fafc;
+  --accent-color: #16a34a;
+  --accent-fg: #ffffff;
+  --dest-color: #dc2626;
+  --dest-fg: #ffffff;
+  --chart-cyan: #0284c7;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  min-height: 100%;
+  background-color: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Force zero radius for strict terminal / high-density aesthetic */
+*,
+*::before,
+*::after {
+  border-radius: 0px !important;
+}
+
+/* Glow effects in Dark Mode */
+.dark .glow-green {
+  text-shadow: 0 0 6px rgba(51, 255, 0, 0.65), 0 0 12px rgba(51, 255, 0, 0.35);
+}
+.dark .glow-amber {
+  text-shadow: 0 0 6px rgba(255, 176, 0, 0.65), 0 0 12px rgba(255, 176, 0, 0.35);
+}
+.dark .glow-red {
+  text-shadow: 0 0 6px rgba(255, 51, 51, 0.65), 0 0 12px rgba(255, 51, 51, 0.35);
+}
+.dark .glow-cyan {
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.65), 0 0 12px rgba(0, 229, 255, 0.35);
+}
+
+/* Light mode text clarity */
+.light .glow-green,
+.light .glow-amber,
+.light .glow-red,
+.light .glow-cyan {
+  text-shadow: none;
+}
+
+/* Terminal Cursor Blinking */
+@keyframes terminal-blink {
+  0%, 49.9% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+
+.animate-terminal-blink {
+  animation: terminal-blink 1s infinite steps(1);
+}
+
+/* CRT Scanlines (Dark Mode only) */
+.dark .crt-overlay {
+  background: linear-gradient(
+      rgba(18, 16, 16, 0) 50%,
+      rgba(0, 0, 0, 0.4) 50%
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(51, 255, 0, 0.02) 0%,
+      rgba(0, 0, 0, 0.45) 100%
+    );
+  background-size: 100% 3px, 100% 100%;
+  pointer-events: none;
+}
+
+.dark .crt-vignette {
+  box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) var(--bg);
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-color);
+}
+*::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+/* Range Inputs */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--input-bg);
+  height: 8px;
+  border: 1px solid var(--border-color);
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--primary-color);
+  cursor: pointer;
+  border: 1px solid var(--bg);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--primary-color);
+  cursor: pointer;
+  border: 1px solid var(--bg);
+}
+
+/* Button active / pressed state */
+button:active {
+  transform: translateY(1px);
+}
