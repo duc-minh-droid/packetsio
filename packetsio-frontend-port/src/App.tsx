@@ -91,6 +91,7 @@ export default function App() {
               positionOf={sim.positionOf}
               tickMs={sim.tickMs}
               isRunning={sim.playing}
+              onSetNodePosition={sim.setNodePosition}
               onAddNode={sim.addNode}
               onAddLink={sim.addLink}
               onToggleLink={sim.toggleLink}

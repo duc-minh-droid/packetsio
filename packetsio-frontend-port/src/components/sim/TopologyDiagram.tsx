@@ -27,6 +27,7 @@ interface Props {
   /** ms per tick — drives the packet tween duration. */
   tickMs: number;
   isRunning: boolean;
+  onSetNodePosition: (id: number, at: Point) => void;
   onAddNode: (kind: NodeKind, at: Point) => void;
   onAddLink: (
     from: number,
@@ -48,14 +49,13 @@ export function TopologyDiagram({
   positionOf,
   tickMs,
   isRunning,
+  onSetNodePosition,
   onAddNode,
   onAddLink,
   onToggleLink,
   onSpawnPacket,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const [dragFrom, setDragFrom] = useState<number | null>(null);
-  const [dragPoint, setDragPoint] = useState<Point | null>(null);
   const [pendingNode, setPendingNode] = useState<PendingNode | null>(null);
   const [pendingLink, setPendingLink] = useState<PendingLink | null>(null);
   const [pendingPacket, setPendingPacket] = useState<PendingPacket | null>(null);
@@ -68,14 +68,27 @@ export function TopologyDiagram({
   const [mode, setMode] = useState<"interact" | "add-node" | "connect">("interact");
   const [connectFrom, setConnectFrom] = useState<number | null>(null);
   const [connectTo, setConnectTo] = useState<number | null>(null);
+  const [camera, setCamera] = useState({ x: 0, y: 0, w: VIEW_W, h: VIEW_H });
+  const [panning, setPanning] = useState<{
+    startClient: Point;
+    startCamera: { x: number; y: number; w: number; h: number };
+  } | null>(null);
+  const [movingNode, setMovingNode] = useState<{
+    id: number;
+    down: Point;
+    moved: boolean;
+  } | null>(null);
+
+  const MIN_VIEW_W = VIEW_W * 0.4;
+  const MAX_VIEW_W = VIEW_W * 2.8;
 
   useEffect(() => {
     if (isRunning) {
-      setDragFrom(null);
-      setDragPoint(null);
       setMode("interact");
       setConnectFrom(null);
       setConnectTo(null);
+      setPanning(null);
+      setMovingNode(null);
     }
   }, [isRunning]);
 
@@ -86,15 +99,50 @@ export function TopologyDiagram({
     }
   }, [mode]);
 
-  const toViewBox = (e: { clientX: number; clientY: number }): Point => {
+  const toWorld = (e: { clientX: number; clientY: number }): Point => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const r = svg.getBoundingClientRect();
+    const nx = (e.clientX - r.left) / r.width;
+    const ny = (e.clientY - r.top) / r.height;
     return {
-      x: Math.round(((e.clientX - r.left) / r.width) * VIEW_W),
-      y: Math.round(((e.clientY - r.top) / r.height) * VIEW_H),
+      x: camera.x + nx * camera.w,
+      y: camera.y + ny * camera.h,
     };
   };
+
+  const clampView = (next: { x: number; y: number; w: number; h: number }) => {
+    const clampedW = Math.max(MIN_VIEW_W, Math.min(MAX_VIEW_W, next.w));
+    const clampedH = clampedW * (VIEW_H / VIEW_W);
+    const minX = -VIEW_W * 1.2;
+    const maxX = VIEW_W * 1.2;
+    const minY = -VIEW_H * 1.2;
+    const maxY = VIEW_H * 1.2;
+    return {
+      x: Math.max(minX, Math.min(maxX, next.x)),
+      y: Math.max(minY, Math.min(maxY, next.y)),
+      w: clampedW,
+      h: clampedH,
+    };
+  };
+
+  const zoomAt = (clientX: number, clientY: number, zoomFactor: number) => {
+    const anchor = toWorld({ clientX, clientY });
+    setCamera((prev) => {
+      const nextW = Math.max(MIN_VIEW_W, Math.min(MAX_VIEW_W, prev.w * zoomFactor));
+      const nextH = nextW * (VIEW_H / VIEW_W);
+      const rx = (anchor.x - prev.x) / prev.w;
+      const ry = (anchor.y - prev.y) / prev.h;
+      return clampView({
+        x: anchor.x - rx * nextW,
+        y: anchor.y - ry * nextH,
+        w: nextW,
+        h: nextH,
+      });
+    });
+  };
+
+  const resetView = () => setCamera({ x: 0, y: 0, w: VIEW_W, h: VIEW_H });
 
   const nodeIds = useMemo(() => snapshot.nodes.map((n) => n.id), [snapshot.nodes]);
 
@@ -360,6 +408,27 @@ export function TopologyDiagram({
               </button>
             </div>
           )}
+
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              onClick={() => setCamera((prev) => clampView({ ...prev, w: prev.w * 1.15, h: prev.h * 1.15 }))}
+              className="border border-border px-2 py-1 uppercase text-muted-foreground hover:border-primary hover:text-primary"
+            >
+              [ - ]
+            </button>
+            <button
+              onClick={resetView}
+              className="border border-border px-2 py-1 uppercase text-muted-foreground hover:border-primary hover:text-primary"
+            >
+              [ FIT ]
+            </button>
+            <button
+              onClick={() => setCamera((prev) => clampView({ ...prev, w: prev.w * 0.87, h: prev.h * 0.87 }))}
+              className="border border-border px-2 py-1 uppercase text-muted-foreground hover:border-primary hover:text-primary"
+            >
+              [ + ]
+            </button>
+          </div>
         </div>
       )}
 
@@ -367,21 +436,60 @@ export function TopologyDiagram({
       <div className="relative overflow-hidden bg-background">
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          viewBox={`${camera.x} ${camera.y} ${camera.w} ${camera.h}`}
           className={`h-auto w-full select-none ${!isRunning && mode === "add-node" ? "cursor-crosshair" : "cursor-default"}`}
           role="img"
           aria-label="Network topology diagram"
+          onWheel={(e) => {
+            if (isRunning) return;
+            e.preventDefault();
+            const factor = e.deltaY > 0 ? 1.12 : 0.9;
+            zoomAt(e.clientX, e.clientY, factor);
+          }}
+          onPointerDown={(e) => {
+            if (isRunning || mode === "add-node") return;
+            const target = e.target as Element;
+            if (target.tagName === "svg" || target.id === "radar-grid-bg") {
+              setPanning({
+                startClient: { x: e.clientX, y: e.clientY },
+                startCamera: camera,
+              });
+            }
+          }}
           onPointerMove={(e) => {
-            if (!isRunning && dragFrom !== null) setDragPoint(toViewBox(e));
+            if (isRunning) return;
+            if (movingNode) {
+              const p = toWorld(e);
+              const movedDistance = Math.hypot(p.x - movingNode.down.x, p.y - movingNode.down.y);
+              onSetNodePosition(movingNode.id, p);
+              if (!movingNode.moved && movedDistance > 2) {
+                setMovingNode((prev) => (prev ? { ...prev, moved: true } : prev));
+              }
+              return;
+            }
+            if (panning) {
+              const svg = svgRef.current;
+              if (!svg) return;
+              const r = svg.getBoundingClientRect();
+              const dxPx = e.clientX - panning.startClient.x;
+              const dyPx = e.clientY - panning.startClient.y;
+              const dx = (dxPx / r.width) * panning.startCamera.w;
+              const dy = (dyPx / r.height) * panning.startCamera.h;
+              setCamera(clampView({
+                ...panning.startCamera,
+                x: panning.startCamera.x - dx,
+                y: panning.startCamera.y - dy,
+              }));
+            }
           }}
           onPointerUp={() => {
-            setDragFrom(null);
-            setDragPoint(null);
+            setPanning(null);
+            setMovingNode(null);
           }}
           onClick={(e) => {
             if (isRunning || mode !== "add-node") return;
             if ((e.target as Element).tagName !== "svg" && (e.target as Element).id !== "radar-grid-bg") return;
-            setPendingNode({ at: toViewBox(e) });
+            setPendingNode({ at: toWorld(e) });
           }}
         >
           <defs>
@@ -445,21 +553,6 @@ export function TopologyDiagram({
           <text x={VIEW_W - 8} y={16} textAnchor="end" fill="var(--color-muted-foreground)" opacity={0.6} fontSize={9} className="font-mono">
             {!isRunning ? "[CONFIG_MODE]" : "[STREAMING]"}
           </text>
-
-          {/* In-progress link drag line */}
-          {dragFrom !== null && dragPoint && (
-            <line
-              x1={positionOf(dragFrom).x}
-              y1={positionOf(dragFrom).y}
-              x2={dragPoint.x}
-              y2={dragPoint.y}
-              stroke="var(--color-primary)"
-              strokeWidth={2}
-              strokeDasharray="4 4"
-              pointerEvents="none"
-              className="animate-pulse"
-            />
-          )}
 
           {/* Topology Links */}
           {snapshot.links.map((l) => {
@@ -533,7 +626,7 @@ export function TopologyDiagram({
           {snapshot.nodes.map((n) => {
             const p = positionOf(n.id);
             const color = NODE_KIND_COLORS[n.node_type];
-            const isDragging = dragFrom === n.id;
+            const isDragging = movingNode?.id === n.id;
 
             return (
               <g
@@ -542,20 +635,20 @@ export function TopologyDiagram({
                 onPointerDown={(e) => {
                   if (isRunning || mode !== "interact") return;
                   e.stopPropagation();
-                  setDragFrom(n.id);
-                  setDragPoint(toViewBox(e));
+                  setMovingNode({
+                    id: n.id,
+                    down: toWorld(e),
+                    moved: false,
+                  });
                 }}
                 onPointerUp={(e) => {
                   if (isRunning || mode !== "interact") return;
                   e.stopPropagation();
-                  if (dragFrom !== null && dragFrom !== n.id) {
-                    onAddLink(dragFrom, n.id, latency, capacity, queueSize);
-                  } else if (dragFrom === n.id && n.node_type === "client") {
+                  if (movingNode?.id === n.id && !movingNode.moved && n.node_type === "client") {
                     setDest(nodeIds.find((id) => id !== n.id) ?? null);
                     setPendingPacket({ from: n.id });
                   }
-                  setDragFrom(null);
-                  setDragPoint(null);
+                  setMovingNode(null);
                 }}
               >
                 {/* Node Reticle outer crosshair ticks */}
@@ -686,11 +779,11 @@ export function TopologyDiagram({
           <span className="text-primary font-bold">&gt; </span>
           {!isRunning ? (
             mode === "add-node" ? (
-              <span className="text-primary font-bold">[Click canvas: add node]</span>
+              <span className="text-primary font-bold">[Click canvas: add node] · [Mouse wheel: zoom]</span>
             ) : mode === "connect" ? (
-              <span className="text-primary font-bold">[Select FROM/TO above, then configure link]</span>
+              <span className="text-primary font-bold">[Select FROM/TO above, then configure link] · [Drag background: pan]</span>
             ) : (
-              <span className="text-primary font-bold">[Click link: toggle] · [Drag node→node: quick connect] · [Click client: spawn packet]</span>
+              <span className="text-primary font-bold">[Drag node: move] · [Drag background: pan] · [Mouse wheel: zoom] · [Click client: spawn packet]</span>
             )
           ) : (
             <span>
