@@ -10,6 +10,7 @@ import {
   type Metrics,
   type NodeKind,
   type PacketState,
+  type ProtocolKind,
   type SimEngine,
   type SimSnapshot,
 } from "@/sim/types.ts";
@@ -40,6 +41,13 @@ function logKindFor(state: PacketState): LogEntry["kind"] {
   if (state === "queued") return "queued";
   return "sent";
 }
+
+const protocolLabel: Record<ProtocolKind, string> = {
+  arp_request: "ARP Who-has",
+  arp_reply: "ARP Reply",
+  icmp_echo_request: "ICMP Echo Request",
+  icmp_echo_reply: "ICMP Echo Reply",
+};
 
 export function useSimulation() {
   const simRef = useRef<SimEngine | null>(null);
@@ -168,7 +176,7 @@ export function useSimulation() {
         pushLog(
           snap.tick,
           logKindFor(p.state),
-          `packet #${p.id} ${stateVerb[p.state]} ${where}${before ? ` (was ${before})` : ""}`,
+          `${protocolLabel[p.protocol]} packet #${p.id} ${stateVerb[p.state]} ${where} | ${p.src_ip} (${p.src_mac}) → ${p.dst_ip} (${p.dst_mac})${before ? ` (was ${before})` : ""}`,
         );
       }
 

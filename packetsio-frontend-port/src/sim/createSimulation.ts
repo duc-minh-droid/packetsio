@@ -1,6 +1,8 @@
 import wasmUrl from "../wasm/packetsio_bg.wasm?url";
 import type { NodeKind, SimEngine, SimSnapshot } from "./types.ts";
 
+type ProtocolKind = "arp_request" | "arp_reply" | "icmp_echo_request" | "icmp_echo_reply";
+
 /**
  * Loads the real wasm-pack (`--target web`) build at `src/wasm/packetsio.js`
  * and constructs a `Simulation`. Browser-only (dynamic import keeps it out of
@@ -40,6 +42,26 @@ interface FPacket {
   ttl: number;
   born: number;
   latency: number;
+  src_mac: string;
+  dst_mac: string;
+  src_ip: string;
+  dst_ip: string;
+  protocol: ProtocolKind;
+}
+
+function defaultIp(id: number, kind: NodeKind): string {
+  if (kind === "client") return `192.168.1.${Math.min(254, 10 + id)}`;
+  if (kind === "server") return `192.168.1.${Math.min(254, 100 + id)}`;
+  return `192.168.1.${Math.min(254, 1 + id)}`;
+}
+
+function defaultMac(id: number): string {
+  const hi = Math.floor(id / 256) % 256;
+  const lo = id % 256;
+  return `AA:BB:CC:00:${hi.toString(16).toUpperCase().padStart(2, "0")}:${lo
+    .toString(16)
+    .toUpperCase()
+    .padStart(2, "0")}`;
 }
 
 /** Stand-in engine mirroring the Rust API, including per-tick snapshots. */
@@ -188,6 +210,11 @@ function createFallback(): SimEngine {
         ttl: 64,
         born: tick,
         latency: 1,
+        src_mac: defaultMac(from),
+        dst_mac: "FF:FF:FF:FF:FF:FF",
+        src_ip: defaultIp(from, nodes.get(from) ?? "router"),
+        dst_ip: defaultIp(to, nodes.get(to) ?? "router"),
+        protocol: "icmp_echo_request",
       });
       return id;
     },
@@ -226,7 +253,14 @@ function createFallback(): SimEngine {
       const snap: SimSnapshot = {
         tick,
         finished: api.is_finished(),
-        nodes: [...nodes.entries()].map(([id, node_type]) => ({ id, node_type })),
+        nodes: [...nodes.entries()].map(([id, node_type]) => ({
+          id,
+          node_type,
+          ip: defaultIp(id, node_type),
+          mask: "255.255.255.0",
+          mac: defaultMac(id),
+          arp_cache: [] as Array<[string, string]>,
+        })),
         links: links.map((l) => ({
           from: l.from,
           to: l.to,
@@ -244,6 +278,11 @@ function createFallback(): SimEngine {
           progress:
             p.state === "travelling" ? Math.min(1, p.elapsed / Math.max(1, p.latency)) : 0,
           ttl: p.ttl,
+          src_mac: p.src_mac,
+          dst_mac: p.dst_mac,
+          src_ip: p.src_ip,
+          dst_ip: p.dst_ip,
+          protocol: p.protocol,
         })),
       };
       return JSON.stringify(snap);

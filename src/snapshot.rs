@@ -1,11 +1,15 @@
 use serde::Serialize;
 use crate::node::NodeType;
-use crate::packet::PacketState;
+use crate::packet::{PacketState, ProtocolKind};
 
 #[derive(Serialize)]
 pub struct NodeSnapshot {
     pub id: usize,
     pub node_type: NodeType,
+    pub ip: String,
+    pub mask: String,
+    pub mac: String,
+    pub arp_cache: Vec<(String, String)>,
 }
 
 #[derive(Serialize)]
@@ -27,6 +31,11 @@ pub struct PacketSnapshot {
     pub to_node: Option<usize>,
     pub progress: f64,
     pub ttl: usize,
+    pub src_mac: String,
+    pub dst_mac: String,
+    pub src_ip: String,
+    pub dst_ip: String,
+    pub protocol: ProtocolKind,
 }
 
 #[derive(Serialize)]

@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 use crate::link::{EnterResult, Link};
 use crate::metrics::Metrics;
 use crate::node::{Node, NodeType};
-use crate::packet::{Packet, PacketState};
+use crate::packet::{Packet, PacketState, ProtocolKind};
 use crate::routing::next_hop_link;
 use crate::snapshot::{LinkSnapshot, NodeSnapshot, PacketSnapshot, SimSnapshot};
 
@@ -54,7 +54,7 @@ impl Simulation {
         self.add_link(1, 2, 3, 1, 5);
         self.add_link(3, 2, 2, 1, 5);
 
-        self.spawn_packet(0, 2);
+        self.ping(0, "192.168.1.5");
     }
 
     pub fn add_node(&mut self, id: usize, kind: &str) {
@@ -94,11 +94,15 @@ impl Simulation {
     }
 
     pub fn spawn_packet(&mut self, from: usize, to: usize) -> usize {
-        let id = self.next_packet_id;
-        self.next_packet_id += 1;
-        self.packets.push(Packet::new(id, from, to, 32));
-        self.metrics.total_packets += 1;
-        id
+        self.spawn_protocol_packet(from, to, ProtocolKind::IcmpEchoRequest)
+    }
+
+    pub fn ping(&mut self, from: usize, target_ip: &str) -> bool {
+        let Some(to) = self.node_id_for_ip(target_ip) else {
+            return false;
+        };
+        self.spawn_protocol_packet(from, to, ProtocolKind::IcmpEchoRequest);
+        true
     }
 
     pub fn is_finished(&self) -> bool {
@@ -111,6 +115,7 @@ impl Simulation {
 
     pub fn step(&mut self) {
         let tick = self.tick;
+        let mut reply_queue: Vec<(usize, usize)> = Vec::new();
 
         for p in self.packets.iter_mut() {
             match p.state {
@@ -129,12 +134,55 @@ impl Simulation {
             match p.state {
                 PacketState::Dropped => {}
                 PacketState::Ready => {
+                    if p.current_node_id == p.destination {
+                        p.state = PacketState::Delivered;
+                        self.metrics.delivered += 1;
+                        self.metrics.total_latency += (tick + 1).saturating_sub(p.start_tick);
+                        if matches!(p.protocol, ProtocolKind::IcmpEchoRequest) {
+                            reply_queue.push((p.destination, p.id));
+                        }
+                        continue;
+                    }
+
                     match next_hop_link(&mut self.links, p.current_node_id, p.destination) {
                         None => {
                             p.state = PacketState::Dropped;
                             self.metrics.dropped += 1;
                         }
                         Some(link) => {
+                            let from_ip = self
+                                .nodes
+                                .get(&p.current_node_id)
+                                .map(|n| n.ip.clone())
+                                .unwrap_or_default();
+                            let to_mac = self
+                                .nodes
+                                .get(&link.to_node_id)
+                                .map(|n| n.mac.clone())
+                                .unwrap_or_else(|| "FF:FF:FF:FF:FF:FF".to_string());
+
+                            if let Some(node) = self.nodes.get_mut(&p.current_node_id) {
+                                if !node.arp_cache.contains_key(&from_ip) {
+                                    node.arp_cache.insert(from_ip.clone(), p.src_mac.clone());
+                                }
+                                if !node.arp_cache.contains_key(&p.dst_ip) {
+                                    p.requires_arp = true;
+                                    p.awaiting_arp_for = Some(link.to_node_id);
+                                    p.protocol = ProtocolKind::ArpRequest;
+                                    p.dst_mac = "FF:FF:FF:FF:FF:FF".to_string();
+                                    node.arp_cache.insert(p.dst_ip.clone(), to_mac.clone());
+                                } else {
+                                    p.requires_arp = false;
+                                    p.awaiting_arp_for = None;
+                                    p.protocol = if matches!(p.protocol, ProtocolKind::IcmpEchoReply) {
+                                        ProtocolKind::IcmpEchoReply
+                                    } else {
+                                        ProtocolKind::IcmpEchoRequest
+                                    };
+                                    p.dst_mac = to_mac;
+                                }
+                            }
+
                             p.current_link = Some((link.from_node_id, link.to_node_id));
                             match link.enter(p.id) {
                                 EnterResult::Entered => {
@@ -171,6 +219,27 @@ impl Simulation {
                 PacketState::Delivered => {}
                 PacketState::Travelling => {
                     p.travel(tick, &mut self.metrics);
+                    if matches!(p.state, PacketState::Delivered)
+                        && matches!(p.protocol, ProtocolKind::IcmpEchoRequest)
+                    {
+                        reply_queue.push((p.destination, p.id));
+                    }
+                    if matches!(p.state, PacketState::Ready)
+                        && p.requires_arp
+                        && p.awaiting_arp_for.is_some()
+                    {
+                        p.protocol = ProtocolKind::ArpReply;
+                        p.requires_arp = false;
+                        p.awaiting_arp_for = None;
+                    }
+                }
+            }
+        }
+
+        for (src_node, request_packet_id) in reply_queue {
+            if let Some(original) = self.packets.iter().find(|p| p.id == request_packet_id) {
+                if let Some(dst_node) = self.node_id_for_ip(&original.src_ip) {
+                    self.spawn_protocol_packet(src_node, dst_node, ProtocolKind::IcmpEchoReply);
                 }
             }
         }
@@ -203,6 +272,14 @@ impl Simulation {
             .map(|n| NodeSnapshot {
                 id: n.id,
                 node_type: n.node_type,
+                ip: n.ip.clone(),
+                mask: n.mask.clone(),
+                mac: n.mac.clone(),
+                arp_cache: n
+                    .arp_cache
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect(),
             })
             .collect();
 
@@ -231,6 +308,11 @@ impl Simulation {
                 to_node: p.current_link.map(|(_, t)| t),
                 progress: p.progress(),
                 ttl: p.ttl,
+                src_mac: p.src_mac.clone(),
+                dst_mac: p.dst_mac.clone(),
+                src_ip: p.src_ip.clone(),
+                dst_ip: p.dst_ip.clone(),
+                protocol: p.protocol,
             })
             .collect();
 
@@ -267,6 +349,34 @@ impl Simulation {
     }
     pub fn max_queue_size(&self) -> usize {
         self.metrics.max_queue_size
+    }
+
+    fn node_id_for_ip(&self, ip: &str) -> Option<usize> {
+        self.nodes
+            .iter()
+            .find(|(_, node)| node.ip == ip)
+            .map(|(id, _)| *id)
+    }
+
+    fn spawn_protocol_packet(
+        &mut self,
+        from: usize,
+        to: usize,
+        protocol: ProtocolKind,
+    ) -> usize {
+        let Some(src) = self.nodes.get(&from).cloned() else {
+            return 0;
+        };
+        let Some(dst) = self.nodes.get(&to).cloned() else {
+            return 0;
+        };
+
+        let id = self.next_packet_id;
+        self.next_packet_id += 1;
+        self.packets
+            .push(Packet::new(id, from, to, 32, &src, &dst, protocol));
+        self.metrics.total_packets += 1;
+        id
     }
 }
 

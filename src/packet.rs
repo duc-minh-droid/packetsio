@@ -1,6 +1,16 @@
 use serde::Serialize;
 use crate::link::Link;
 use crate::metrics::Metrics;
+use crate::node::Node;
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProtocolKind {
+    ArpRequest,
+    ArpReply,
+    IcmpEchoRequest,
+    IcmpEchoReply,
+}
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -25,10 +35,25 @@ pub struct Packet {
     pub ttl: usize,
     pub start_tick: usize,
     pub has_started: bool,
+    pub src_mac: String,
+    pub dst_mac: String,
+    pub src_ip: String,
+    pub dst_ip: String,
+    pub protocol: ProtocolKind,
+    pub requires_arp: bool,
+    pub awaiting_arp_for: Option<usize>,
 }
 
 impl Packet {
-    pub fn new(id: usize, from: usize, destination: usize, ttl: usize) -> Self {
+    pub fn new(
+        id: usize,
+        from: usize,
+        destination: usize,
+        ttl: usize,
+        src: &Node,
+        dst: &Node,
+        protocol: ProtocolKind,
+    ) -> Self {
         Self {
             id,
             state: PacketState::Ready,
@@ -41,6 +66,13 @@ impl Packet {
             ttl,
             start_tick: 0,
             has_started: false,
+            src_mac: src.mac.clone(),
+            dst_mac: "FF:FF:FF:FF:FF:FF".to_string(),
+            src_ip: src.ip.clone(),
+            dst_ip: dst.ip.clone(),
+            protocol,
+            requires_arp: false,
+            awaiting_arp_for: None,
         }
     }
 

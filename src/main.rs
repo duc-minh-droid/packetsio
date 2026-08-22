@@ -4,7 +4,10 @@ fn main() {
     let mut sim = Simulation::new();
     sim.load_default_topology();
 
-    for _ in 0..7 {
+    let ok = sim.ping(0, "192.168.1.5");
+    println!("ping 192.168.1.5 -> {}", if ok { "scheduled" } else { "failed" });
+
+    for _ in 0..12 {
         if sim.is_finished() {
             break;
         }

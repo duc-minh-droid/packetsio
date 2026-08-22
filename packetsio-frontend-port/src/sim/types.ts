@@ -7,9 +7,15 @@ export type NodeKind = "client" | "router" | "server";
 
 export type PacketState = "ready" | "travelling" | "queued" | "delivered" | "dropped";
 
+export type ProtocolKind = "arp_request" | "arp_reply" | "icmp_echo_request" | "icmp_echo_reply";
+
 export interface SnapNode {
   id: number;
   node_type: NodeKind;
+  ip: string;
+  mask: string;
+  mac: string;
+  arp_cache: Array<[string, string]>;
 }
 
 export interface SnapLink {
@@ -30,6 +36,11 @@ export interface SnapPacket {
   /** 0.0 at from_node .. 1.0 at to_node */
   progress: number;
   ttl: number;
+  src_mac: string;
+  dst_mac: string;
+  src_ip: string;
+  dst_ip: string;
+  protocol: ProtocolKind;
 }
 
 export interface SimSnapshot {
