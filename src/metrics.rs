@@ -6,6 +6,10 @@ pub struct Metrics {
     pub total_latency: usize,
     pub total_ticks: usize,
     pub max_queue_size: usize,
+
+    // Congestion metrics
+    pub total_congestion_drops: usize,
+    pub total_queue_delay: usize,
 }
 
 impl Metrics {
@@ -34,6 +38,22 @@ impl Metrics {
             0.0
         } else {
             self.delivered as f64 / self.total_ticks as f64
+        }
+    }
+
+    pub fn congestion_drop_rate(&self) -> f64 {
+        if self.total_packets == 0 {
+            0.0
+        } else {
+            self.total_congestion_drops as f64 / self.total_packets as f64
+        }
+    }
+
+    pub fn average_queue_delay(&self) -> f64 {
+        if self.delivered == 0 {
+            0.0
+        } else {
+            self.total_queue_delay as f64 / self.delivered as f64
         }
     }
 }

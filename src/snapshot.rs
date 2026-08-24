@@ -17,10 +17,14 @@ pub struct LinkSnapshot {
     pub from: usize,
     pub to: usize,
     pub latency: usize,
+    pub bandwidth: usize,
     pub capacity: usize,
     pub current_packets: usize,
     pub queue_len: usize,
     pub active: bool,
+    pub utilization: f64,
+    pub queue_delay: f64,
+    pub packet_loss_rate: f64,
 }
 
 #[derive(Serialize)]

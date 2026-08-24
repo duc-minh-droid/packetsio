@@ -10,6 +10,7 @@ pub enum ProtocolKind {
     ArpReply,
     IcmpEchoRequest,
     IcmpEchoReply,
+    OspfLsa,
 }
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq)]
@@ -42,6 +43,8 @@ pub struct Packet {
     pub protocol: ProtocolKind,
     pub requires_arp: bool,
     pub awaiting_arp_for: Option<usize>,
+    // Queue delay tracking
+    pub queue_entry_tick: Option<usize>,
 }
 
 impl Packet {
@@ -73,6 +76,8 @@ impl Packet {
             protocol,
             requires_arp: false,
             awaiting_arp_for: None,
+            // Queue delay tracking
+            queue_entry_tick: None,
         }
     }
 
@@ -86,6 +91,7 @@ impl Packet {
         if let Some((_, to)) = self.current_link {
             self.current_node_id = to;
             self.arrived_link = self.current_link;
+            self.current_link = None;
             self.state = if self.current_node_id == self.destination {
                 PacketState::Delivered
             } else {
@@ -108,6 +114,15 @@ impl Packet {
     }
 
     pub fn advance_on_link(&mut self, link: &Link, tick: usize, metrics: &mut Metrics) {
+        // If we were queued, account for queue delay
+        if matches!(self.state, PacketState::Queued) {
+            if let Some(entry_tick) = self.queue_entry_tick {
+                let queue_delay = tick.saturating_sub(entry_tick);
+                metrics.total_queue_delay += queue_delay;
+            }
+            self.queue_entry_tick = None;
+        }
+
         self.start_travel(link);
         self.travel(tick, metrics);
     }

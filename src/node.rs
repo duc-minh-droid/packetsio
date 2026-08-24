@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::collections::HashMap;
+use crate::simulation::Lsa;
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -27,6 +28,15 @@ pub struct Node {
     pub mask: String,
     pub mac: String,
     pub arp_cache: HashMap<String, String>,
+    pub routing_table: HashMap<usize, Route>,
+    pub lsdb: HashMap<usize, Lsa>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Route {
+    pub destination: usize, // node ID
+    pub next_hop: usize,    // immediate neighbor node ID
+    pub cost: usize,        // total cost to destination (hop count for RIP)
 }
 
 impl Node {
@@ -39,6 +49,8 @@ impl Node {
             mask,
             mac: default_mac(id),
             arp_cache: HashMap::new(),
+            routing_table: HashMap::new(),
+            lsdb: HashMap::new(),
         }
     }
 }

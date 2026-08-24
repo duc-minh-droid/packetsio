@@ -3,10 +3,22 @@ use wasm_bindgen::prelude::*;
 
 use crate::link::{EnterResult, Link};
 use crate::metrics::Metrics;
-use crate::node::{Node, NodeType};
+use crate::node::{Node, NodeType, Route};
 use crate::packet::{Packet, PacketState, ProtocolKind};
-use crate::routing::next_hop_link;
 use crate::snapshot::{LinkSnapshot, NodeSnapshot, PacketSnapshot, SimSnapshot};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoutingProtocol {
+    Rip,
+    Ospf,
+}
+
+#[derive(Clone, Debug)]
+pub struct Lsa {
+    pub router_id: usize,
+    pub sequence: usize,
+    pub links: Vec<(usize, usize)>, // (neighbor_id, cost)
+}
 
 #[wasm_bindgen]
 pub struct Simulation {
@@ -16,6 +28,11 @@ pub struct Simulation {
     metrics: Metrics,
     tick: usize,
     next_packet_id: usize,
+    routing_protocol: RoutingProtocol,
+    rip_update_interval: usize,
+    rip_last_update: HashMap<usize, usize>,
+    ospf_lsa_interval: usize,
+    ospf_lsa_sequence: HashMap<usize, usize>,
 }
 
 #[wasm_bindgen]
@@ -32,6 +49,11 @@ impl Simulation {
             metrics: Metrics::new(),
             tick: 0,
             next_packet_id: 0,
+            routing_protocol: RoutingProtocol::Rip,
+            rip_update_interval: 10,
+            rip_last_update: HashMap::new(),
+            ospf_lsa_interval: 5,
+            ospf_lsa_sequence: HashMap::new(),
         }
     }
 
@@ -42,23 +64,41 @@ impl Simulation {
         self.metrics = Metrics::new();
         self.tick = 0;
         self.next_packet_id = 0;
+        // Reset routing protocol state
+        self.routing_protocol = RoutingProtocol::Rip;
+        self.rip_update_interval = 2; // set to 2 for testing RIP updates every 2 ticks
+        self.rip_last_update.clear();
 
         self.add_node(0, "client");
         self.add_node(1, "router");
         self.add_node(2, "server");
         self.add_node(3, "router");
 
-        self.add_link(0, 1, 2, 1, 5);
-        self.add_link(0, 3, 1, 1, 5);
-        self.set_link_active(0, 3, false);
-        self.add_link(1, 2, 3, 1, 5);
-        self.add_link(3, 2, 2, 1, 5);
+        // Bidirectional links
+        self.add_link(0, 1, 2, 10, 1, 5);
+        self.add_link(1, 0, 2, 10, 1, 5);
+        self.add_link(0, 3, 1, 10, 1, 5);
+        self.add_link(3, 0, 1, 10, 1, 5);
+        self.set_link_active(0, 3, false); // Actually, we need to set both directions? We'll set the link from 0 to 3 inactive, and from 3 to 0 inactive.
+        self.set_link_active(3, 0, false);
+        self.add_link(1, 2, 3, 10, 1, 5);
+        self.add_link(2, 1, 3, 10, 1, 5);
+        self.add_link(3, 2, 2, 10, 1, 5);
+        self.add_link(2, 3, 2, 10, 1, 5);
+
+        // Initialize rip_last_update to 0 (meaning never updated) so that the first update happens immediately
+        for id in self.nodes.keys() {
+            self.rip_last_update.insert(*id, 0);
+        }
 
         self.ping(0, "192.168.1.5");
     }
 
     pub fn add_node(&mut self, id: usize, kind: &str) {
-        self.nodes.insert(id, Node::new(id, NodeType::from_str(kind)));
+        let mut node = Node::new(id, NodeType::from_str(kind));
+        // Initialize routing table (will be updated when links are added)
+        node.routing_table = HashMap::new();
+        self.nodes.insert(id, node);
         self.links.entry(id).or_default();
     }
 
@@ -67,16 +107,33 @@ impl Simulation {
         from: usize,
         to: usize,
         latency: usize,
+        bandwidth: usize,
         capacity: usize,
         max_queue_size: usize,
     ) {
         let neighbours = self.links.entry(from).or_default();
         if let Some(existing) = neighbours.iter_mut().find(|l| l.to_node_id == to) {
             existing.latency = latency.max(1);
+            existing.bandwidth = bandwidth.max(1);
             existing.capacity = capacity.max(1);
             existing.max_queue_size = max_queue_size;
         } else {
-            neighbours.push(Link::new(from, to, latency, capacity, max_queue_size));
+            neighbours.push(Link::new(from, to, latency, bandwidth, capacity, max_queue_size));
+        }
+        // Update routing tables for direct connections
+        if let Some(from_node) = self.nodes.get_mut(&from) {
+            from_node.routing_table.insert(to, Route {
+                destination: to,
+                next_hop: to,
+                cost: 1,
+            });
+        }
+        if let Some(to_node) = self.nodes.get_mut(&to) {
+            to_node.routing_table.insert(from, Route {
+                destination: from,
+                next_hop: from,
+                cost: 1,
+            });
         }
     }
 
@@ -144,10 +201,23 @@ impl Simulation {
                         continue;
                     }
 
-                    match next_hop_link(&mut self.links, p.current_node_id, p.destination) {
+                    // Look up the next hop from the routing table
+                    let next_hop_option = self.nodes.get(&p.current_node_id)
+                        .and_then(|node| node.routing_table.get(&p.destination))
+                        .map(|route| route.next_hop);
+
+                    let link_option = if let Some(next_hop) = next_hop_option {
+                        self.links
+                            .get_mut(&p.current_node_id)
+                            .and_then(|links| links.iter_mut().find(|l| l.to_node_id == next_hop && l.active))
+                    } else {
+                        None
+                    };
+
+                    match link_option {
                         None => {
-                            p.state = PacketState::Dropped;
-                            self.metrics.dropped += 1;
+                            // No route available; keep packet in Ready to retry later
+                            // (TTL already decremented above)
                         }
                         Some(link) => {
                             let from_ip = self
@@ -194,10 +264,12 @@ impl Simulation {
                                 }
                                 EnterResult::Queued => {
                                     p.state = PacketState::Queued;
+                                    p.queue_entry_tick = Some(tick);
                                 }
                                 EnterResult::Dropped => {
                                     p.state = PacketState::Dropped;
                                     self.metrics.dropped += 1;
+                                    self.metrics.total_congestion_drops += 1;
                                 }
                             }
                         }
@@ -261,8 +333,78 @@ impl Simulation {
                 self.metrics.max_queue_size = self.metrics.max_queue_size.max(link.queue.len());
             }
         }
+
+        // Update link congestion metrics
+        for neighbours in self.links.values_mut() {
+            for link in neighbours {
+                link.update_metrics();
+            }
+        }
+
+        // Process RIP updates if the routing protocol is RIP
+        if self.routing_protocol == RoutingProtocol::Rip {
+            self.process_rip_updates(self.tick);
+        }
+
         self.metrics.total_ticks += 1;
         self.tick += 1;
+    }
+
+    fn process_rip_updates(&mut self, current_tick: usize) {
+        // We'll collect updates to apply after we've read all routing tables
+        let mut updates: HashMap<usize, Vec<(usize, Route)>> = HashMap::new();
+
+        for (&node_id, node) in &self.nodes {
+            if node.node_type != NodeType::Router {
+                continue;
+            }
+            let last_update = *self.rip_last_update.get(&node_id).unwrap_or(&0);
+            if last_update == 0 || current_tick - last_update >= self.rip_update_interval {
+                // Time to send an update from this node to all its neighbors
+                // We mark the update time here, but we will apply the updates after the loop
+                self.rip_last_update.insert(node_id, current_tick);
+                // Get neighbors from links
+                if let Some(links) = self.links.get(&node_id) {
+                    for link in links {
+                        if !link.active {
+                            continue;
+                        }
+                        let neighbor_id = link.to_node_id;
+                        // For each destination in this node's routing table, compute the route via this node
+                        for (dest_id, route) in &node.routing_table {
+                            // Use congestion-aware metric: base cost (hop count) + congestion penalty
+                            let link_congestion = link.congestion_metric();
+                            let congestion_penalty = (link_congestion * 10.0) as usize; // Scale congestion to integer cost
+                            let new_cost = route.cost + 1 + congestion_penalty; // base hop count + congestion
+                            updates.entry(neighbor_id)
+                                .or_insert_with(Vec::new)
+                                .push((*dest_id, Route {
+                                    destination: *dest_id,
+                                    next_hop: node_id,
+                                    cost: new_cost,
+                                }));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply the updates to the neighbors' routing tables
+        for (neighbor_id, vec_of_updates) in updates {
+            if let Some(neighbor) = self.nodes.get_mut(&neighbor_id) {
+                for (dest_id, route) in vec_of_updates {
+                    match neighbor.routing_table.get(&dest_id) {
+                        Some(existing) if route.cost < existing.cost => {
+                            neighbor.routing_table.insert(dest_id, route);
+                        }
+                        None => {
+                            neighbor.routing_table.insert(dest_id, route);
+                        }
+                        _ => {} // do nothing
+                    }
+                }
+            }
+        }
     }
 
     pub fn snapshot(&self) -> String {
@@ -283,18 +425,21 @@ impl Simulation {
             })
             .collect();
 
-        let links = self
-            .links
+        let links = self.links
             .values()
             .flatten()
             .map(|l| LinkSnapshot {
                 from: l.from_node_id,
                 to: l.to_node_id,
                 latency: l.latency,
+                bandwidth: l.bandwidth,
                 capacity: l.capacity,
                 current_packets: l.current_packets,
                 queue_len: l.queue.len(),
                 active: l.active,
+                utilization: l.utilization(),
+                queue_delay: l.queue_delay(),
+                packet_loss_rate: l.packet_loss_rate(),
             })
             .collect();
 
