@@ -4,7 +4,7 @@
 export class Simulation {
     free(): void;
     [Symbol.dispose](): void;
-    add_link(from: number, to: number, latency: number, capacity: number, max_queue_size: number): void;
+    add_link(from: number, to: number, latency: number, bandwidth: number, capacity: number, max_queue_size: number): void;
     add_node(id: number, kind: string): void;
     average_latency(): number;
     current_tick(): number;
@@ -29,7 +29,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_simulation_free: (a: number, b: number) => void;
-    readonly simulation_add_link: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly simulation_add_link: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly simulation_add_node: (a: number, b: number, c: number, d: number) => void;
     readonly simulation_average_latency: (a: number) => number;
     readonly simulation_current_tick: (a: number) => number;

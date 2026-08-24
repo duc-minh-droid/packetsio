@@ -15,11 +15,12 @@ export class Simulation {
      * @param {number} from
      * @param {number} to
      * @param {number} latency
+     * @param {number} bandwidth
      * @param {number} capacity
      * @param {number} max_queue_size
      */
-    add_link(from, to, latency, capacity, max_queue_size) {
-        wasm.simulation_add_link(this.__wbg_ptr, from, to, latency, capacity, max_queue_size);
+    add_link(from, to, latency, bandwidth, capacity, max_queue_size) {
+        wasm.simulation_add_link(this.__wbg_ptr, from, to, latency, bandwidth, capacity, max_queue_size);
     }
     /**
      * @param {number} id

@@ -2,7 +2,7 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_simulation_free: (a: number, b: number) => void;
-export const simulation_add_link: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+export const simulation_add_link: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
 export const simulation_add_node: (a: number, b: number, c: number, d: number) => void;
 export const simulation_average_latency: (a: number) => number;
 export const simulation_current_tick: (a: number) => number;
