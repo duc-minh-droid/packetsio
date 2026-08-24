@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::time::Instant;
 
 pub enum EnterResult {
     Entered,
@@ -21,8 +22,8 @@ pub struct Link {
     // Congestion metrics
     pub total_entered: usize,     // Total packets that attempted to enter
     pub total_dropped: usize,     // Total packets dropped due to queue full
-    pub total_queue_time: usize,  // Accumulated queue delay for all packets (in ticks)
-    pub last_update_tick: usize,  // Last tick when metrics were updated
+    pub total_queue_time: usize,  // Accumulated queue delay for all packets
+    pub last_update: Instant,     // Last time metrics were updated
 }
 
 impl Link {
@@ -49,17 +50,20 @@ impl Link {
             total_entered: 0,
             total_dropped: 0,
             total_queue_time: 0,
-            last_update_tick: 0,
+            last_update: Instant::now(),
         }
     }
 
-    // Update congestion metrics - call each tick
-    pub fn update_metrics(&mut self, current_tick: usize) {
-        // Add queue time for all packets currently in queue (approximation)
-        // Each packet in queue has been waiting for roughly 1 tick
-        self.total_queue_time += self.queue.len();
+    // Update congestion metrics - call periodically
+    pub fn update_metrics(&mut self) {
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_update).as_secs_f64();
 
-        self.last_update_tick = current_tick;
+        // Add queue time for all packets currently in queue (approximation)
+        // Each packet in queue has been waiting for roughly elapsed time
+        self.total_queue_time += (self.queue.len() as f64 * elapsed) as usize;
+
+        self.last_update = now;
     }
 
     pub fn available(&self) -> bool {

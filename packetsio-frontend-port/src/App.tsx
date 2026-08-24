@@ -37,7 +37,7 @@ export default function App() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="font-mono text-base sm:text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
-                  <span className="text-primary font-bold">&gt;</span>
+                  <span className="text-primary font-bold">{'>'}</span>
                   <span>packetsio</span>
                   <span className="text-xs font-normal text-muted-foreground">
                     / network packet visualizer

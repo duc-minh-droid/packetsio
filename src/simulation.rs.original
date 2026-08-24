@@ -39,8 +39,8 @@ pub struct Simulation {
 impl Simulation {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Simulation {
-        // #[cfg(target_arch = "wasm32")]
-        // console_error_panic_hook::set_once();
+        #[cfg(target_arch = "wasm32")]
+        console_error_panic_hook::set_once();
 
         Simulation {
             nodes: HashMap::new(),
@@ -49,7 +49,7 @@ impl Simulation {
             metrics: Metrics::new(),
             tick: 0,
             next_packet_id: 0,
-            routing_protocol: RoutingProtocol::Ospf, // Changed to Ospf to disable RIP updates for testing
+            routing_protocol: RoutingProtocol::Rip,
             rip_update_interval: 10,
             rip_last_update: HashMap::new(),
             ospf_lsa_interval: 5,
@@ -58,24 +58,40 @@ impl Simulation {
     }
 
     pub fn load_default_topology(&mut self) {
-        // Create nodes: 0: client, 1: router, 2: server, 3: router
+        self.nodes.clear();
+        self.links.clear();
+        self.packets.clear();
+        self.metrics = Metrics::new();
+        self.tick = 0;
+        self.next_packet_id = 0;
+        // Reset routing protocol state
+        self.routing_protocol = RoutingProtocol::Rip;
+        self.rip_update_interval = 2; // set to 2 for testing RIP updates every 2 ticks
+        self.rip_last_update.clear();
+
         self.add_node(0, "client");
         self.add_node(1, "router");
         self.add_node(2, "server");
         self.add_node(3, "router");
 
-        // Add links with latency, bandwidth, capacity, max_queue_size
-        // Bandwidth is set to 10 (packets per tick) for all links
-        self.add_link(0, 1, 2, 10, 1, 4); // latency=2, bandwidth=10, capacity=1, max_queue_size=4
-        self.add_link(0, 3, 1, 10, 1, 4); // latency=1, bandwidth=10, capacity=1, max_queue_size=4
-        self.add_link(1, 2, 3, 10, 1, 4); // latency=3, bandwidth=10, capacity=1, max_queue_size=4
-        self.add_link(3, 2, 2, 10, 1, 4); // latency=2, bandwidth=10, capacity=1, max_queue_size=4
+        // Bidirectional links
+        self.add_link(0, 1, 2, 10, 1, 5);
+        self.add_link(1, 0, 2, 10, 1, 5);
+        self.add_link(0, 3, 1, 10, 1, 5);
+        self.add_link(3, 0, 1, 10, 1, 5);
+        self.set_link_active(0, 3, false); // Actually, we need to set both directions? We'll set the link from 0 to 3 inactive, and from 3 to 0 inactive.
+        self.set_link_active(3, 0, false);
+        self.add_link(1, 2, 3, 10, 1, 5);
+        self.add_link(2, 1, 3, 10, 1, 5);
+        self.add_link(3, 2, 2, 10, 1, 5);
+        self.add_link(2, 3, 2, 10, 1, 5);
 
-        // Deactivate link 0->3 initially
-        self.set_link_active(0, 3, false);
+        // Initialize rip_last_update to 0 (meaning never updated) so that the first update happens immediately
+        for id in self.nodes.keys() {
+            self.rip_last_update.insert(*id, 0);
+        }
 
-        // Spawn a packet from client (0) to server (2)
-        self.spawn_packet(0, 2);
+        self.ping(0, "192.168.1.5");
     }
 
     pub fn add_node(&mut self, id: usize, kind: &str) {
@@ -204,6 +220,39 @@ impl Simulation {
                             // (TTL already decremented above)
                         }
                         Some(link) => {
+                            let from_ip = self
+                                .nodes
+                                .get(&p.current_node_id)
+                                .map(|n| n.ip.clone())
+                                .unwrap_or_default();
+                            let to_mac = self
+                                .nodes
+                                .get(&link.to_node_id)
+                                .map(|n| n.mac.clone())
+                                .unwrap_or_else(|| "FF:FF:FF:FF:FF:FF".to_string());
+
+                            if let Some(node) = self.nodes.get_mut(&p.current_node_id) {
+                                if !node.arp_cache.contains_key(&from_ip) {
+                                    node.arp_cache.insert(from_ip.clone(), p.src_mac.clone());
+                                }
+                                if !node.arp_cache.contains_key(&p.dst_ip) {
+                                    p.requires_arp = true;
+                                    p.awaiting_arp_for = Some(link.to_node_id);
+                                    p.protocol = ProtocolKind::ArpRequest;
+                                    p.dst_mac = "FF:FF:FF:FF:FF:FF".to_string();
+                                    node.arp_cache.insert(p.dst_ip.clone(), to_mac.clone());
+                                } else {
+                                    p.requires_arp = false;
+                                    p.awaiting_arp_for = None;
+                                    p.protocol = if matches!(p.protocol, ProtocolKind::IcmpEchoReply) {
+                                        ProtocolKind::IcmpEchoReply
+                                    } else {
+                                        ProtocolKind::IcmpEchoRequest
+                                    };
+                                    p.dst_mac = to_mac;
+                                }
+                            }
+
                             p.current_link = Some((link.from_node_id, link.to_node_id));
                             match link.enter(p.id) {
                                 EnterResult::Entered => {
@@ -247,6 +296,14 @@ impl Simulation {
                     {
                         reply_queue.push((p.destination, p.id));
                     }
+                    if matches!(p.state, PacketState::Ready)
+                        && p.requires_arp
+                        && p.awaiting_arp_for.is_some()
+                    {
+                        p.protocol = ProtocolKind::ArpReply;
+                        p.requires_arp = false;
+                        p.awaiting_arp_for = None;
+                    }
                 }
             }
         }
@@ -280,7 +337,7 @@ impl Simulation {
         // Update link congestion metrics
         for neighbours in self.links.values_mut() {
             for link in neighbours {
-                link.update_metrics(self.tick);
+                link.update_metrics();
             }
         }
 
@@ -296,7 +353,6 @@ impl Simulation {
     fn process_rip_updates(&mut self, current_tick: usize) {
         // We'll collect updates to apply after we've read all routing tables
         let mut updates: HashMap<usize, Vec<(usize, Route)>> = HashMap::new();
-        let mut nodes_to_update: Vec<usize> = Vec::new();
 
         for (&node_id, node) in &self.nodes {
             if node.node_type != NodeType::Router {
@@ -305,8 +361,8 @@ impl Simulation {
             let last_update = *self.rip_last_update.get(&node_id).unwrap_or(&0);
             if last_update == 0 || current_tick - last_update >= self.rip_update_interval {
                 // Time to send an update from this node to all its neighbors
-                // We'll mark the update time after we finish reading
-                nodes_to_update.push(node_id);
+                // We mark the update time here, but we will apply the updates after the loop
+                self.rip_last_update.insert(node_id, current_tick);
                 // Get neighbors from links
                 if let Some(links) = self.links.get(&node_id) {
                     for link in links {
@@ -331,11 +387,6 @@ impl Simulation {
                     }
                 }
             }
-        }
-
-        // Mark the update time for all nodes that sent updates
-        for node_id in nodes_to_update {
-            self.rip_last_update.insert(node_id, current_tick);
         }
 
         // Apply the updates to the neighbors' routing tables

@@ -20,8 +20,10 @@ export const simulation_spawn_packet: (a: number, b: number, c: number) => numbe
 export const simulation_step: (a: number) => void;
 export const simulation_throughput: (a: number) => number;
 export const simulation_total_packets: (a: number) => number;
+export const add: (a: number, b: number) => number;
+export const greet: () => [number, number];
+export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_start: () => void;

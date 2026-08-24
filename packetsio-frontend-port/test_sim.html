@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packet Simulation Test</title>
+</head>
+<body>
+    <h1>Packet Simulation Test</h1>
+    <div id="output">Loading simulation...</div>
+
+    <script type="module">
+        // Import the simulation module
+        import init, { Simulation } from './src/wasm/packetsio.js';
+
+        // Initialize WASM
+        init('./src/wasm/packetsio_bg.wasm')
+            .then(() => {
+                console.log('WASM initialized');
+                document.getElementById('output').textContent = 'WASM loaded successfully';
+
+                // Create simulation instance
+                const sim = new Simulation();
+                console.log('Simulation created');
+
+                // Load default topology
+                sim.load_default_topology();
+                console.log('Topology loaded');
+
+                // Get initial snapshot
+                const snapshot = sim.snapshot();
+                console.log('Initial snapshot:', snapshot);
+
+                // Parse and display info
+                const data = JSON.parse(snapshot);
+                document.getElementById('output').innerHTML = `
+                    <h2>Simulation Initialized Successfully!</h2>
+                    <p><strong>Tick:</strong> ${data.tick}</p>
+                    <p><strong>Nodes:</strong> ${data.nodes.length}</p>
+                    <p><strong>Links:</strong> ${data.links.length}</p>
+                    <p><strong>Packets:</strong> ${data.packets.length}</p>
+                    <p><strong>Finished:</strong> ${data.finished}</p>
+                `;
+
+                // Run a few steps to see if it works
+                for (let i = 0; i < 5; i++) {
+                    sim.step();
+                }
+
+                const snapshotAfter = sim.snapshot();
+                const dataAfter = JSON.parse(snapshotAfter);
+
+                document.getElementById('output').innerHTML += `
+                    <h3>After 5 Steps:</h3>
+                    <p><strong>Tick:</strong> ${dataAfter.tick}</p>
+                    <p><strong>Delivered:</strong> ${dataAfter.packets.filter(p => p.state === "delivered").length}</p>
+                    <p><strong>Dropped:</strong> ${dataAfter.packets.filter(p => p.state === "dropped").length}</p>
+                    <p><strong>Finished:</strong> ${dataAfter.finished}</p>
+                `;
+
+                console.log('Simulation after 5 steps:', dataAfter);
+            })
+            .catch(err => {
+                console.error('Error:', err);
+                document.getElementById('output').textContent = 'Error: ' + err.message;
+            });
+    </script>
+</body>
+</html>
