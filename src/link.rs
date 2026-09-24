@@ -6,23 +6,33 @@ pub enum EnterResult {
     Dropped,
 }
 
+/// A directed link between two nodes.
+///
+/// * `latency`   - propagation delay in ticks
+/// * `bandwidth` - how many packets may *enter* the link per tick
+/// * `capacity`  - how many packets may be in transit at the same time
+/// * `max_queue_size` - FIFO buffer at the sending end; tail-drop when full
 #[derive(Clone, Debug)]
 pub struct Link {
     pub from_node_id: usize,
     pub to_node_id: usize,
-    pub latency: usize,           // Base propagation delay (in ticks)
-    pub bandwidth: usize,         // Bandwidth in packets per tick
-    pub capacity: usize,          // Maximum packets that can be in transit
-    pub current_packets: usize,   // Currently in transit packets
-    pub queue: VecDeque<usize>,   // Queued packet IDs
+    pub latency: usize,
+    pub bandwidth: usize,
+    pub capacity: usize,
+    pub current_packets: usize,
+    pub queue: VecDeque<usize>,
     pub active: bool,
     pub max_queue_size: usize,
 
+    // Per-tick bandwidth accounting
+    pub sent_this_tick: usize,
+
     // Congestion metrics
-    pub total_entered: usize,     // Total packets that attempted to enter
-    pub total_dropped: usize,     // Total packets dropped due to queue full
-    pub total_queue_time: usize,  // Accumulated queue delay for all packets (in ticks)
-    pub last_update_tick: usize,  // Last tick when metrics were updated
+    pub total_entered: usize,    // packets that tried to use the link
+    pub total_forwarded: usize,  // packets that actually started travelling
+    pub total_dropped: usize,    // tail drops (queue full)
+    pub total_queue_time: usize, // ticks spent waiting in this link's queue
+    pub load: f64,               // EWMA of (in transit + queued) / (capacity + queue)
 }
 
 impl Link {
@@ -44,88 +54,89 @@ impl Link {
             queue: VecDeque::new(),
             active: true,
             max_queue_size,
-
-            // Initialize congestion metrics
+            sent_this_tick: 0,
             total_entered: 0,
+            total_forwarded: 0,
             total_dropped: 0,
             total_queue_time: 0,
-            last_update_tick: 0,
+            load: 0.0,
         }
     }
 
-    // Update congestion metrics - call each tick
-    pub fn update_metrics(&mut self, current_tick: usize) {
-        // Add queue time for all packets currently in queue (approximation)
-        // Each packet in queue has been waiting for roughly 1 tick
-        self.total_queue_time += self.queue.len();
-
-        self.last_update_tick = current_tick;
+    /// Reset per-tick bandwidth tokens. Called at the start of every tick.
+    pub fn begin_tick(&mut self) {
+        self.sent_this_tick = 0;
     }
 
+    /// Called at the end of every tick.
+    pub fn update_metrics(&mut self) {
+        self.total_queue_time += self.queue.len();
+        let denom = (self.capacity + self.max_queue_size).max(1) as f64;
+        let instant = (self.current_packets + self.queue.len()) as f64 / denom;
+        self.load = self.load * 0.8 + instant * 0.2;
+    }
+
+    /// True when a packet could start travelling right now.
     pub fn available(&self) -> bool {
-        self.active && self.current_packets < self.capacity
+        self.active && self.current_packets < self.capacity && self.sent_this_tick < self.bandwidth
     }
 
     pub fn utilization(&self) -> f64 {
-        if self.capacity == 0 {
-            0.0
-        } else {
-            self.current_packets as f64 / self.capacity as f64
-        }
+        self.current_packets as f64 / self.capacity.max(1) as f64
     }
 
+    /// Average number of ticks a forwarded packet waited in this link's queue.
     pub fn queue_delay(&self) -> f64 {
-        if self.queue.is_empty() {
+        if self.total_forwarded == 0 {
             0.0
         } else {
-            // Average queue time per packet
-            let total_packets = self.total_entered as f64;
-            if total_packets > 0.0 {
-                self.total_queue_time as f64 / total_packets
-            } else {
-                0.0
-            }
+            self.total_queue_time as f64 / self.total_forwarded as f64
         }
     }
 
     pub fn packet_loss_rate(&self) -> f64 {
-        let total_attempts = self.total_entered as f64;
-        if total_attempts > 0.0 {
-            self.total_dropped as f64 / total_attempts
-        } else {
+        if self.total_entered == 0 {
             0.0
+        } else {
+            self.total_dropped as f64 / self.total_entered as f64
         }
     }
 
-    pub fn effective_latency(&self) -> usize {
-        // Base latency + queue delay component
-        let queue_delay_ticks = self.queue_delay() as usize;
-        self.latency + queue_delay_ticks
+    /// Link-state cost used by the congestion-aware routing mode: propagation
+    /// delay plus the time the current queue needs to drain.
+    pub fn congestion_cost(&self) -> usize {
+        let drain = (self.queue.len() + self.bandwidth - 1) / self.bandwidth;
+        let saturated = if self.current_packets >= self.capacity { 1 } else { 0 };
+        self.latency + drain + saturated
     }
 
     pub fn congestion_metric(&self) -> f64 {
-        // Combined metric: utilization + normalized queue delay + packet loss
-        let utilization = self.utilization();
-        let queue_delay_norm = (self.queue_delay() / 10.0).min(1.0); // Normalize assuming max 10 ticks queue delay
-        let loss = self.packet_loss_rate();
+        let queue_fill = if self.max_queue_size == 0 {
+            0.0
+        } else {
+            self.queue.len() as f64 / self.max_queue_size as f64
+        };
+        self.utilization() + queue_fill + self.packet_loss_rate()
+    }
 
-        utilization + queue_delay_norm + loss
+    fn start_one(&mut self) {
+        self.current_packets += 1;
+        self.sent_this_tick += 1;
+        self.total_forwarded += 1;
     }
 
     pub fn leave(&mut self) {
         self.current_packets = self.current_packets.saturating_sub(1);
     }
 
+    /// Offer a packet to the link. FIFO: a new packet never overtakes a queue.
     pub fn enter(&mut self, packet_id: usize) -> EnterResult {
         self.total_entered += 1;
-
-        if self.available() {
-            self.current_packets += 1;
+        if self.queue.is_empty() && self.available() {
+            self.start_one();
             EnterResult::Entered
-        } else if self.queue.len() < self.max_queue_size {
-            if !self.queue.contains(&packet_id) {
-                self.queue.push_back(packet_id);
-            }
+        } else if self.active && self.queue.len() < self.max_queue_size {
+            self.queue.push_back(packet_id);
             EnterResult::Queued
         } else {
             self.total_dropped += 1;
@@ -133,13 +144,18 @@ impl Link {
         }
     }
 
+    /// Pop the head of the queue if the link can accept it this tick.
     pub fn dequeue(&mut self) -> Option<usize> {
         if self.available() {
             let packet_id = self.queue.pop_front()?;
-            self.current_packets += 1;
+            self.start_one();
             Some(packet_id)
         } else {
             None
         }
+    }
+
+    pub fn queue_position(&self, packet_id: usize) -> Option<usize> {
+        self.queue.iter().position(|&id| id == packet_id)
     }
 }

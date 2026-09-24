@@ -1,6 +1,5 @@
 use serde::Serialize;
-use std::collections::HashMap;
-use crate::simulation::Lsa;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -13,7 +12,7 @@ pub enum NodeType {
 impl NodeType {
     pub fn from_str(s: &str) -> NodeType {
         match s.to_lowercase().as_str() {
-            "client" => NodeType::Client,
+            "client" | "host" => NodeType::Client,
             "server" => NodeType::Server,
             _ => NodeType::Router,
         }
@@ -28,15 +27,18 @@ pub struct Node {
     pub mask: String,
     pub mac: String,
     pub arp_cache: HashMap<String, String>,
-    pub routing_table: HashMap<usize, Route>,
-    pub lsdb: HashMap<usize, Lsa>,
+    /// destination node id -> route. BTreeMap keeps iteration deterministic.
+    pub routing_table: BTreeMap<usize, Route>,
+    pub forwarded: usize,
+    pub dropped: usize,
+    pub received: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct Route {
     pub destination: usize, // node ID
     pub next_hop: usize,    // immediate neighbor node ID
-    pub cost: usize,        // total cost to destination (hop count for RIP)
+    pub cost: usize,        // latency sum (link-state) or hop count (RIP)
 }
 
 impl Node {
@@ -49,8 +51,10 @@ impl Node {
             mask,
             mac: default_mac(id),
             arp_cache: HashMap::new(),
-            routing_table: HashMap::new(),
-            lsdb: HashMap::new(),
+            routing_table: BTreeMap::new(),
+            forwarded: 0,
+            dropped: 0,
+            received: 0,
         }
     }
 }
@@ -59,14 +63,17 @@ fn default_mac(id: usize) -> String {
     format!("AA:BB:CC:{:02X}:{:02X}:{:02X}", 0, (id / 256) & 0xff, id & 0xff)
 }
 
+/// Each node gets a unique address: hosts in 10.0.x, routers in 10.255.x,
+/// servers in 10.1.x. (The old scheme gave client 1 and server 8 the same IP
+/// in some topologies, which broke `ping` and echo replies.)
 fn default_interface(id: usize, node_type: NodeType) -> (String, String) {
-    let host_octet = match node_type {
-        NodeType::Client => 10 + id,
-        NodeType::Router => id.max(1),
-        NodeType::Server => 3 + id,
+    let subnet = match node_type {
+        NodeType::Client => 0,
+        NodeType::Server => 1,
+        NodeType::Router => 255,
     };
     (
-        format!("192.168.1.{}", host_octet.min(254)),
+        format!("10.{}.{}.{}", subnet, (id / 250) & 0xff, (id % 250) + 1),
         "255.255.255.0".to_string(),
     )
 }

@@ -1,12 +1,22 @@
 [package]
 name = "packetsio"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+description = "Tick-based network packet simulation engine (Rust + WebAssembly)"
 
 [dependencies]
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-wasm-bindgen = "0.2.60"
+wasm-bindgen = "=0.2.127"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+# The CLI gets its own name so its debug files don't collide with the library's.
+[[bin]]
+name = "packetsio-cli"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true

@@ -1,4 +1,6 @@
-#[derive(Clone, Debug, Default)]
+use serde::Serialize;
+
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct Metrics {
     pub total_packets: usize,
     pub delivered: usize,
@@ -10,6 +12,19 @@ pub struct Metrics {
     // Congestion metrics
     pub total_congestion_drops: usize,
     pub total_queue_delay: usize,
+}
+
+/// What happened during the most recent tick. The frontend charts these.
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct TickStats {
+    pub spawned: usize,
+    pub delivered: usize,
+    pub dropped: usize,
+    /// Sum of end-to-end latency of packets delivered this tick
+    pub latency_sum: usize,
+    pub queued: usize,
+    pub in_flight: usize,
+    pub live: usize,
 }
 
 impl Metrics {

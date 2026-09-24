@@ -1,39 +1,65 @@
-use packetsio::Simulation;
+//! CLI demo for the packetsio engine.
+//!
+//!   cargo run                       human-readable congestion demo
+//!   cargo run -- --routing adaptive same demo with congestion-aware routing
+//!   cargo run -- --trace 120        one JSON snapshot per tick (JSON lines)
+
 use packetsio::node::NodeType;
+use packetsio::Simulation;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let arg_value = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let routing = arg_value("--routing").unwrap_or_else(|| "ospf".to_string());
+    let trace_ticks = arg_value("--trace").and_then(|v| v.parse::<usize>().ok());
+
     let mut sim = Simulation::new();
     sim.load_default_topology();
+    sim.set_routing_protocol(&routing);
 
-    // Activate both paths: 0-1-2 and 0-3-2
+    // Bring up the faster path 0-3-2 and offer 3 packets per tick for 10 ticks.
     sim.set_link_active(0, 3, true);
     sim.set_link_active(3, 0, true);
+    sim.add_flow(0, 2, 1, 3, 0, 10);
+    sim.refresh_routes();
 
-    // Create a burst of packets from client (0) to server (2)
-    // We'll send 30 packets to create congestion
-    for _ in 0..30 {
-        sim.spawn_packet(0, 2);
+    if let Some(ticks) = trace_ticks {
+        println!("{}", sim.snapshot());
+        for _ in 0..ticks {
+            if sim.is_finished() {
+                break;
+            }
+            sim.step();
+            println!("{}", sim.snapshot());
+        }
+        return;
     }
 
-    println!("Starting simulation with 30 packets from client to server...");
-    println!("Both paths are active: 0-1-2 (latency 5) and 0-3-2 (latency 3)");
-    println!("We expect congestion on the first path due to limited bandwidth and capacity");
+    println!("3 packets/tick for 10 ticks from client (0) to server (2), routing = {}", sim.routing_protocol());
+    println!("Paths: 0-1-2 (latency 5) and 0-3-2 (latency 3); links carry 1 pkt/tick, queue 4\n");
 
-    // Run for 200 steps or until finished
     let mut step = 0;
     while !sim.is_finished() && step < 200 {
         sim.step();
         step += 1;
-
-        // Print progress every 20 steps
-        if step % 20 == 0 {
-            println!("Step {}: {} packets delivered, {} dropped",
-                     step, sim.delivered(), sim.dropped());
+        if step % 5 == 0 {
+            println!(
+                "tick {:>3}: delivered {:>2}, dropped {:>2}",
+                step,
+                sim.delivered(),
+                sim.dropped()
+            );
         }
     }
 
+    let m = sim.metrics();
     println!("\n=== SIMULATION FINISHED ===");
-    println!("Steps: {}", step);
+    println!("Ticks: {}", step);
     println!("Packets: {}", sim.total_packets());
     println!("Delivered: {}", sim.delivered());
     println!("Dropped: {}", sim.dropped());
@@ -41,32 +67,32 @@ fn main() {
     println!("Average latency: {:.2} ticks", sim.average_latency());
     println!("Throughput: {:.2} packets/tick", sim.throughput());
     println!("Max queue size: {}", sim.max_queue_size());
-    println!("Congestion drops: {}", sim.metrics.total_congestion_drops);
-    println!("Congestion drop rate: {:.2}%", sim.metrics.congestion_drop_rate() * 100.0);
-    println!("Average queue delay: {:.2} ticks", sim.metrics.average_queue_delay());
+    println!("Congestion drops: {}", m.total_congestion_drops);
+    println!("Congestion drop rate: {:.2}%", m.congestion_drop_rate() * 100.0);
+    println!("Average queue delay: {:.2} ticks", m.average_queue_delay());
 
-    // Print routing tables for routers
     println!("\n=== ROUTING TABLES ===");
-    for (id, node) in &sim.nodes {
-        if node.node_type == NodeType::Router {
-            println!("Router {}:", id);
+    for (id, node) in sim.nodes() {
+        if node.node_type == NodeType::Router || node.node_type == NodeType::Client {
+            println!("Node {} ({:?}):", id, node.node_type);
             for (dest, route) in &node.routing_table {
-                println!("  To {} via {} (cost: {})", dest, route.next_hop, route.cost);
+                println!("  to {} via {} (cost {})", dest, route.next_hop, route.cost);
             }
         }
     }
 
-    // Print link congestion metrics from the simulation
-    println!("\n=== LINK CONGESTION METRICS ===");
-    for (from, links) in &sim.links {
-        for link in links {
-            if link.active {
-                println!("Link {} -> {}: utilization={:.2}, queue_delay={:.2}, loss_rate={:.2}",
-                         from, link.to_node_id,
-                         link.utilization(),
-                         link.queue_delay(),
-                         link.packet_loss_rate());
-            }
+    println!("\n=== LINKS ===");
+    for (from, links) in sim.links() {
+        for link in links.iter().filter(|l| l.active) {
+            println!(
+                "{} -> {}: forwarded={:>2} dropped={:>2} loss={:.2} avg_queue_delay={:.2}",
+                from,
+                link.to_node_id,
+                link.total_forwarded,
+                link.total_dropped,
+                link.packet_loss_rate(),
+                link.queue_delay()
+            );
         }
     }
 }

@@ -1,80 +1,73 @@
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BTreeMap, BinaryHeap};
 use crate::link::Link;
+use crate::node::Route;
 
-pub fn quickest_route(
-    links: &HashMap<usize, Vec<Link>>,
-    from: usize,
-    to: usize,
-) -> Option<Vec<usize>> {
-    if from == to {
-        return Some(vec![from]);
-    }
+pub type LinkMap = BTreeMap<usize, Vec<Link>>;
 
-    let mut distance: HashMap<usize, usize> = HashMap::new();
-    let mut previous: HashMap<usize, usize> = HashMap::new();
-    let mut heap: BinaryHeap<Reverse<(usize, usize)>> = BinaryHeap::new();
+/// Dijkstra over active links. `cost` maps a link to its weight.
+/// Returns (distance, first hop) for every reachable node.
+pub fn shortest_paths<F>(links: &LinkMap, from: usize, cost: F) -> BTreeMap<usize, (usize, usize)>
+where
+    F: Fn(&Link) -> usize,
+{
+    let mut best: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
+    let mut heap: BinaryHeap<Reverse<(usize, usize, usize)>> = BinaryHeap::new();
+    // (distance, node, first hop)
+    heap.push(Reverse((0, from, from)));
 
-    for &k in links.keys() {
-        distance.insert(k, usize::MAX);
-    }
-    distance.insert(from, 0);
-    heap.push(Reverse((0, from)));
-
-    while let Some(Reverse((current_distance, current))) = heap.pop() {
-        if current == to {
-            break;
-        }
-        if current_distance > *distance.get(&current).unwrap_or(&usize::MAX) {
+    while let Some(Reverse((dist, node, first))) = heap.pop() {
+        if best.contains_key(&node) {
             continue;
         }
-        if let Some(neighbours) = links.get(&current) {
-            for link in neighbours {
-                if !link.active {
+        best.insert(node, (dist, first));
+        if let Some(neighbours) = links.get(&node) {
+            for link in neighbours.iter().filter(|l| l.active) {
+                if best.contains_key(&link.to_node_id) {
                     continue;
                 }
-                let neighbor_node_id = link.to_node_id;
-                let new_distance = current_distance.saturating_add(link.latency);
-                if new_distance < *distance.get(&neighbor_node_id).unwrap_or(&usize::MAX) {
-                    distance.insert(neighbor_node_id, new_distance);
-                    previous.insert(neighbor_node_id, current);
-                    heap.push(Reverse((new_distance, neighbor_node_id)));
-                }
+                let hop = if node == from { link.to_node_id } else { first };
+                heap.push(Reverse((dist.saturating_add(cost(link)), link.to_node_id, hop)));
             }
         }
     }
+    best.remove(&from);
+    best
+}
 
-    if *distance.get(&to).unwrap_or(&usize::MAX) == usize::MAX {
-        return None;
+/// Link-state routing table for one node (what OSPF converges to).
+pub fn link_state_table<F>(links: &LinkMap, from: usize, cost: F) -> BTreeMap<usize, Route>
+where
+    F: Fn(&Link) -> usize,
+{
+    shortest_paths(links, from, cost)
+        .into_iter()
+        .map(|(dest, (dist, hop))| (dest, Route { destination: dest, next_hop: hop, cost: dist }))
+        .collect()
+}
+
+/// Full node path from `from` to `to` by latency, if one exists.
+pub fn quickest_route(links: &LinkMap, from: usize, to: usize) -> Option<Vec<usize>> {
+    if from == to {
+        return Some(vec![from]);
     }
-
-    let mut path: Vec<usize> = Vec::new();
-    let mut current = to;
-    let mut visited_count = 0;
-    let max_hops = links.len().max(32);
-
-    while current != from {
-        path.push(current);
-        visited_count += 1;
-        if visited_count > max_hops {
+    let mut path = vec![from];
+    let mut current = from;
+    // Walk first hops; each step re-runs Dijkstra from the current node, which
+    // is fine for the small topologies this crate simulates.
+    while current != to {
+        let (_, hop) = *shortest_paths(links, current, |l| l.latency).get(&to)?;
+        if path.contains(&hop) || path.len() > links.len() + 1 {
             return None;
         }
-        current = *previous.get(&current)?;
+        path.push(hop);
+        current = hop;
     }
-    path.push(current);
-    path.reverse();
     Some(path)
 }
 
-pub fn next_hop_link<'a>(
-    links: &'a mut HashMap<usize, Vec<Link>>,
-    current: usize,
-    destination: usize,
-) -> Option<&'a mut Link> {
+pub fn next_hop_link<'a>(links: &'a mut LinkMap, current: usize, destination: usize) -> Option<&'a mut Link> {
     let path = quickest_route(links, current, destination)?;
-    if path.len() < 2 {
-        return None;
-    }
     let next_node = *path.get(1)?;
     links
         .get_mut(&current)?
