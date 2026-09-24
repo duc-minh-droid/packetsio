@@ -12,6 +12,33 @@ export class Simulation {
         wasm.__wbg_simulation_free(ptr, 0);
     }
     /**
+     * Convenience: the same link in both directions.
+     * @param {number} a
+     * @param {number} b
+     * @param {number} latency
+     * @param {number} bandwidth
+     * @param {number} capacity
+     * @param {number} max_queue_size
+     */
+    add_duplex_link(a, b, latency, bandwidth, capacity, max_queue_size) {
+        wasm.simulation_add_duplex_link(this.__wbg_ptr, a, b, latency, bandwidth, capacity, max_queue_size);
+    }
+    /**
+     * Register a traffic generator. `stop` = 0 means it never stops.
+     * @param {number} src
+     * @param {number} dst
+     * @param {number} interval
+     * @param {number} burst
+     * @param {number} start
+     * @param {number} stop
+     * @returns {number}
+     */
+    add_flow(src, dst, interval, burst, start, stop) {
+        const ret = wasm.simulation_add_flow(this.__wbg_ptr, src, dst, interval, burst, start, stop);
+        return ret >>> 0;
+    }
+    /**
+     * Add (or reconfigure) a directed link.
      * @param {number} from
      * @param {number} to
      * @param {number} latency
@@ -37,6 +64,9 @@ export class Simulation {
     average_latency() {
         const ret = wasm.simulation_average_latency(this.__wbg_ptr);
         return ret;
+    }
+    clear_flows() {
+        wasm.simulation_clear_flows(this.__wbg_ptr);
     }
     /**
      * @returns {number}
@@ -73,6 +103,10 @@ export class Simulation {
         const ret = wasm.simulation_is_finished(this.__wbg_ptr);
         return ret !== 0;
     }
+    /**
+     * 0: client, 1: router, 2: server, 3: router. Two paths from client to
+     * server: 0-1-2 (latency 5) and 0-3-2 (latency 3, starts disabled).
+     */
     load_default_topology() {
         wasm.simulation_load_default_topology(this.__wbg_ptr);
     }
@@ -101,6 +135,56 @@ export class Simulation {
         return ret !== 0;
     }
     /**
+     * Apply pending topology changes to routing tables now instead of at the
+     * start of the next tick (so the UI can show routes before playing).
+     */
+    refresh_routes() {
+        wasm.simulation_refresh_routes(this.__wbg_ptr);
+    }
+    /**
+     * @param {number} id
+     * @returns {boolean}
+     */
+    remove_flow(id) {
+        const ret = wasm.simulation_remove_flow(this.__wbg_ptr, id);
+        return ret !== 0;
+    }
+    /**
+     * @param {number} from
+     * @param {number} to
+     * @returns {boolean}
+     */
+    remove_link(from, to) {
+        const ret = wasm.simulation_remove_link(this.__wbg_ptr, from, to);
+        return ret !== 0;
+    }
+    /**
+     * @returns {string}
+     */
+    routing_protocol() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.simulation_routing_protocol(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Run up to `n` ticks, stopping early if the simulation finishes.
+     * @param {number} n
+     * @returns {number}
+     */
+    run(n) {
+        const ret = wasm.simulation_run(this.__wbg_ptr, n);
+        return ret >>> 0;
+    }
+    /**
+     * Bring a link up or down. Taking a link down drops what is on the wire
+     * and sends queued packets back to the node to be rerouted.
      * @param {number} from
      * @param {number} to
      * @param {boolean} active
@@ -109,6 +193,15 @@ export class Simulation {
     set_link_active(from, to, active) {
         const ret = wasm.simulation_set_link_active(this.__wbg_ptr, from, to, active);
         return ret !== 0;
+    }
+    /**
+     * "rip", "ospf" or "adaptive". Routing tables are rebuilt from scratch.
+     * @param {string} name
+     */
+    set_routing_protocol(name) {
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.simulation_set_routing_protocol(this.__wbg_ptr, ptr0, len0);
     }
     /**
      * @returns {string}
@@ -124,6 +217,17 @@ export class Simulation {
         } finally {
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
         }
+    }
+    /**
+     * Spawn `count` one-way packets at once. Returns the first id.
+     * @param {number} from
+     * @param {number} to
+     * @param {number} count
+     * @returns {number}
+     */
+    spawn_burst(from, to, count) {
+        const ret = wasm.simulation_spawn_burst(this.__wbg_ptr, from, to, count);
+        return ret >>> 0;
     }
     /**
      * @param {number} from
@@ -153,32 +257,6 @@ export class Simulation {
     }
 }
 if (Symbol.dispose) Simulation.prototype[Symbol.dispose] = Simulation.prototype.free;
-
-/**
- * @param {number} a
- * @param {number} b
- * @returns {number}
- */
-export function add(a, b) {
-    const ret = wasm.add(a, b);
-    return ret;
-}
-
-/**
- * @returns {string}
- */
-export function greet() {
-    let deferred1_0;
-    let deferred1_1;
-    try {
-        const ret = wasm.greet();
-        deferred1_0 = ret[0];
-        deferred1_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-    }
-}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
