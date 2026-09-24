@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 10 5 0 10z" fill="#7c8aa0"/>
+    </marker>
+  </defs>
+  <rect width="960" height="400" rx="18" fill="#0b1019"/>
+  <text x="32" y="44" fill="#e2e8f0" font-size="19" font-weight="700">One call to Simulation::step()</text>
+  <text x="32" y="66" fill="#8491a7" font-size="13">Phases run in this order every tick. Order matters: arrivals free capacity before queues drain, and queues drain before new packets try to enter.</text>
+
+  <g font-size="12.5">
+    <!-- phase boxes -->
+    <g>
+      <rect x="32" y="96" width="138" height="112" rx="12" fill="#141b2a" stroke="#fb923c" stroke-opacity=".6"/>
+      <text x="48" y="120" fill="#fdba74" font-weight="700">1  Flows</text>
+      <text x="48" y="142" fill="#94a3b8">traffic generators</text>
+      <text x="48" y="159" fill="#94a3b8">spawn packets at</text>
+      <text x="48" y="176" fill="#94a3b8">their source host</text>
+    </g>
+    <g>
+      <rect x="186" y="96" width="138" height="112" rx="12" fill="#141b2a" stroke="#38bdf8" stroke-opacity=".6"/>
+      <text x="202" y="120" fill="#7dd3fc" font-weight="700">2  Travel</text>
+      <text x="202" y="142" fill="#94a3b8">remaining -= 1;</text>
+      <text x="202" y="159" fill="#94a3b8">at 0 the packet</text>
+      <text x="202" y="176" fill="#94a3b8">arrives, link.leave()</text>
+    </g>
+    <g>
+      <rect x="340" y="96" width="138" height="112" rx="12" fill="#141b2a" stroke="#fbbf24" stroke-opacity=".6"/>
+      <text x="356" y="120" fill="#fcd34d" font-weight="700">3  Drain queues</text>
+      <text x="356" y="142" fill="#94a3b8">FIFO head starts</text>
+      <text x="356" y="159" fill="#94a3b8">while capacity and</text>
+      <text x="356" y="176" fill="#94a3b8">bandwidth allow</text>
+    </g>
+    <g>
+      <rect x="494" y="96" width="138" height="112" rx="12" fill="#141b2a" stroke="#34d399" stroke-opacity=".6"/>
+      <text x="510" y="120" fill="#6ee7b7" font-weight="700">4  Forward</text>
+      <text x="510" y="142" fill="#94a3b8">deliver, or look up</text>
+      <text x="510" y="159" fill="#94a3b8">next hop, TTL -1,</text>
+      <text x="510" y="176" fill="#94a3b8">link.enter()</text>
+    </g>
+    <g>
+      <rect x="648" y="96" width="138" height="112" rx="12" fill="#141b2a" stroke="#a78bfa" stroke-opacity=".6"/>
+      <text x="664" y="120" fill="#c4b5fd" font-weight="700">5  Routing</text>
+      <text x="664" y="142" fill="#94a3b8">RIP round every 3t</text>
+      <text x="664" y="159" fill="#94a3b8">adaptive SPF every 2t</text>
+      <text x="664" y="176" fill="#94a3b8">OSPF on change</text>
+    </g>
+    <g>
+      <rect x="802" y="96" width="126" height="112" rx="12" fill="#141b2a" stroke="#64748b"/>
+      <text x="818" y="120" fill="#e2e8f0" font-weight="700">6  Metrics</text>
+      <text x="818" y="142" fill="#94a3b8">queue time, EWMA</text>
+      <text x="818" y="159" fill="#94a3b8">load, tick stats,</text>
+      <text x="818" y="176" fill="#94a3b8">tick += 1</text>
+    </g>
+    <g stroke="#7c8aa0" stroke-width="1.5" marker-end="url(#a)">
+      <line x1="170" y1="152" x2="183" y2="152"/>
+      <line x1="324" y1="152" x2="337" y2="152"/>
+      <line x1="478" y1="152" x2="491" y2="152"/>
+      <line x1="632" y1="152" x2="645" y2="152"/>
+      <line x1="786" y1="152" x2="799" y2="152"/>
+    </g>
+  </g>
+
+  <!-- link.enter outcomes -->
+  <text x="32" y="250" fill="#e2e8f0" font-size="14" font-weight="700">link.enter(packet)</text>
+  <g font-size="12.5">
+    <rect x="32" y="266" width="280" height="104" rx="12" fill="#10231f" stroke="#34d399" stroke-opacity=".5"/>
+    <text x="48" y="290" fill="#6ee7b7" font-weight="700">Entered</text>
+    <text x="48" y="311" fill="#94a3b8">queue empty, in-flight &lt; capacity,</text>
+    <text x="48" y="328" fill="#94a3b8">sent this tick &lt; bandwidth</text>
+    <text x="48" y="350" fill="#64748b">starts travelling for `latency` ticks</text>
+
+    <rect x="336" y="266" width="280" height="104" rx="12" fill="#231d0c" stroke="#fbbf24" stroke-opacity=".5"/>
+    <text x="352" y="290" fill="#fcd34d" font-weight="700">Queued</text>
+    <text x="352" y="311" fill="#94a3b8">link busy but queue has room</text>
+    <text x="352" y="328" fill="#94a3b8">(new packets never overtake the queue)</text>
+    <g fill="#fbbf24"><rect x="352" y="342" width="11" height="11" rx="2"/><rect x="368" y="342" width="11" height="11" rx="2"/><rect x="384" y="342" width="11" height="11" rx="2"/></g>
+    <g fill="none" stroke="#475569"><rect x="400" y="342" width="11" height="11" rx="2"/><rect x="416" y="342" width="11" height="11" rx="2"/></g>
+
+    <rect x="640" y="266" width="288" height="104" rx="12" fill="#26121a" stroke="#fb7185" stroke-opacity=".5"/>
+    <text x="656" y="290" fill="#fda4af" font-weight="700">Dropped</text>
+    <text x="656" y="311" fill="#94a3b8">queue full: tail drop</text>
+    <text x="656" y="328" fill="#94a3b8">also: TTL expired, no route for 12t,</text>
+    <text x="656" y="345" fill="#94a3b8">link cut while on the wire</text>
+  </g>
+</svg>

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 440" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10z" fill="#7c8aa0"/>
+    </marker>
+  </defs>
+  <rect width="960" height="440" rx="18" fill="#0b1019"/>
+  <text x="32" y="44" fill="#e2e8f0" font-size="19" font-weight="700">How packetsio fits together</text>
+  <text x="32" y="66" fill="#8491a7" font-size="13">The browser never simulates anything. It asks the Rust engine for a tick, then animates between snapshots.</text>
+
+  <!-- Rust side -->
+  <rect x="32" y="96" width="300" height="300" rx="14" fill="#141b2a" stroke="#fb923c" stroke-opacity=".55"/>
+  <text x="52" y="124" fill="#fdba74" font-size="13" font-weight="700" letter-spacing="1">RUST CRATE  (src/)</text>
+  <g font-size="12.5" fill="#cbd5e1">
+    <rect x="52" y="140" width="260" height="46" rx="9" fill="#0b1019" stroke="#334155"/>
+    <text x="66" y="160" font-weight="600" fill="#e2e8f0">simulation.rs</text>
+    <text x="66" y="177" fill="#8491a7">step(): flows, travel, queues, forward</text>
+    <rect x="52" y="194" width="124" height="46" rx="9" fill="#0b1019" stroke="#334155"/>
+    <text x="66" y="214" font-weight="600" fill="#e2e8f0">link.rs</text>
+    <text x="66" y="231" fill="#8491a7">FIFO, bw, cap</text>
+    <rect x="188" y="194" width="124" height="46" rx="9" fill="#0b1019" stroke="#334155"/>
+    <text x="202" y="214" font-weight="600" fill="#e2e8f0">routing.rs</text>
+    <text x="202" y="231" fill="#8491a7">Dijkstra</text>
+    <rect x="52" y="248" width="124" height="46" rx="9" fill="#0b1019" stroke="#334155"/>
+    <text x="66" y="268" font-weight="600" fill="#e2e8f0">packet.rs</text>
+    <text x="66" y="285" fill="#8491a7">TTL, path, drops</text>
+    <rect x="188" y="248" width="124" height="46" rx="9" fill="#0b1019" stroke="#334155"/>
+    <text x="202" y="268" font-weight="600" fill="#e2e8f0">snapshot.rs</text>
+    <text x="202" y="285" fill="#8491a7">serde JSON</text>
+    <rect x="52" y="310" width="260" height="66" rx="9" fill="#0b1019" stroke="#334155" stroke-dasharray="4 4"/>
+    <text x="66" y="332" font-weight="600" fill="#e2e8f0">main.rs  (CLI)</text>
+    <text x="66" y="350" fill="#8491a7">cargo run  |  --routing adaptive</text>
+    <text x="66" y="366" fill="#8491a7">--trace N  (JSON lines per tick)</text>
+  </g>
+
+  <!-- wasm bridge -->
+  <rect x="372" y="170" width="170" height="112" rx="14" fill="#141b2a" stroke="#a78bfa" stroke-opacity=".6"/>
+  <text x="457" y="200" text-anchor="middle" fill="#c4b5fd" font-size="13" font-weight="700">wasm-bindgen</text>
+  <text x="457" y="222" text-anchor="middle" fill="#8491a7" font-size="12">packetsio_bg.wasm</text>
+  <text x="457" y="240" text-anchor="middle" fill="#8491a7" font-size="12">~280 KB, committed</text>
+  <text x="457" y="264" text-anchor="middle" fill="#56627a" font-size="11">scripts/build-wasm.sh</text>
+  <line x1="332" y1="226" x2="368" y2="226" stroke="#7c8aa0" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <!-- browser -->
+  <rect x="582" y="96" width="346" height="300" rx="14" fill="#141b2a" stroke="#38bdf8" stroke-opacity=".55"/>
+  <text x="602" y="124" fill="#7dd3fc" font-size="13" font-weight="700" letter-spacing="1">BROWSER  (packetsio-frontend-port/)</text>
+  <g font-size="12.5">
+    <rect x="602" y="140" width="306" height="62" rx="9" fill="#0b1019" stroke="#334155"/>
+    <text x="616" y="160" font-weight="600" fill="#e2e8f0">SimController</text>
+    <text x="616" y="177" fill="#8491a7">playback clock, sim.step(), JSON.parse(snapshot)</text>
+    <text x="616" y="193" fill="#8491a7">chart history, selection, event log</text>
+    <rect x="602" y="222" width="148" height="80" rx="9" fill="#0b1019" stroke="#334155"/>
+    <text x="616" y="242" font-weight="600" fill="#e2e8f0">Canvas renderer</text>
+    <text x="616" y="259" fill="#8491a7">60 fps rAF loop</text>
+    <text x="616" y="275" fill="#8491a7">interpolates by</text>
+    <text x="616" y="291" fill="#8491a7">tick progress α</text>
+    <rect x="760" y="222" width="148" height="80" rx="9" fill="#0b1019" stroke="#334155"/>
+    <text x="774" y="242" font-weight="600" fill="#e2e8f0">React panels</text>
+    <text x="774" y="259" fill="#8491a7">metrics, inspector,</text>
+    <text x="774" y="275" fill="#8491a7">dock; re-render</text>
+    <text x="774" y="291" fill="#8491a7">once per tick</text>
+    <rect x="602" y="318" width="306" height="58" rx="9" fill="#0b1019" stroke="#334155" stroke-dasharray="4 4"/>
+    <text x="616" y="340" font-weight="600" fill="#e2e8f0">scenarios.ts</text>
+    <text x="616" y="358" fill="#8491a7">add_node / add_duplex_link / add_flow + x,y layout</text>
+  </g>
+  <line x1="542" y1="212" x2="598" y2="180" stroke="#7c8aa0" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="566" y="162" fill="#56627a" font-size="11" text-anchor="middle">snapshot()</text>
+  <line x1="598" y1="330" x2="546" y2="262" stroke="#7c8aa0" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="560" y="318" fill="#56627a" font-size="11" text-anchor="middle">calls</text>
+  <line x1="676" y1="202" x2="676" y2="218" stroke="#7c8aa0" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="834" y1="202" x2="834" y2="218" stroke="#7c8aa0" stroke-width="1.6" marker-end="url(#a)"/>
+</svg>
